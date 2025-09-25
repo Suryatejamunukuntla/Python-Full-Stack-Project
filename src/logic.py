@@ -1,26 +1,16 @@
-from fastapi import HTTPException
-from .db import insert_note, get_notes_by_user, update_note, delete_note
+# src/logic.py
+import uuid
 
-def create_note_logic(note):
-    response = insert_note(note)
-    if response.error:
-        raise HTTPException(status_code=400, detail=response.error.message)
-    return response.data
+def generate_share_link() -> str:
+    """Generate a unique UUID-based share link"""
+    return str(uuid.uuid4())
 
-def get_notes_logic(user_id):
-    response = get_notes_by_user(user_id)
-    if response.error:
-        raise HTTPException(status_code=400, detail=response.error.message)
-    return response.data
-
-def update_note_logic(note_id, note):
-    response = update_note(note_id, note)
-    if response.error:
-        raise HTTPException(status_code=400, detail=response.error.message)
-    return response.data
-
-def delete_note_logic(note_id):
-    response = delete_note(note_id)
-    if response.error:
-        raise HTTPException(status_code=400, detail=response.error.message)
-    return {"message": "Note deleted successfully"}
+def format_tags(tags_str: str) -> list:
+    """
+    Convert a comma-separated string into a list of clean tags.
+    Ignores empty tags and trims whitespace.
+    Example: "tag1, , tag2, " -> ["tag1", "tag2"]
+    """
+    if not tags_str:
+        return []
+    return [tag.strip() for tag in tags_str.split(",") if tag.strip()]

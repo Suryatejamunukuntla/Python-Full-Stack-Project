@@ -1,28 +1,114 @@
-from fastapi import FastAPI
+# main.py
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from src.logic import create_note_logic, get_notes_logic, update_note_logic, delete_note_logic
+from src.db import insert_note, get_user_notes, get_shared_note_by_link, update_note
+import uuid
 
 app = FastAPI()
 
-class Note(BaseModel):
-    id: int | None = None
+# ------------------------------
+# Models
+# ------------------------------
+class RegisterIn(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+class NoteIn(BaseModel):
+    user_id: int
     title: str
     content: str
-    user_id: str
-    shared: bool = False
+    tags: list
+    is_shared: bool = False
+
+class SharedNoteUpdate(BaseModel):
+    title: str
+    content: str
+    tags: list
+
+# ------------------------------
+# User functions
+# ------------------------------
+from supabase import create_client
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def register_user(name: str, email: str, password: str):
+    existing = supabase.table("users").select("*").eq("email", email).execute()
+    if existing.data:
+        return None
+    res = supabase.table("users").insert({
+        "name": name,
+        "email": email,
+        "password": password
+    }).execute()
+    return res.data[0] if res.data else None
+
+def login_user(email: str, password: str):
+    res = supabase.table("users").select("*").eq("email", email).eq("password", password).execute()
+    return res.data[0] if res.data else None
+
+# ------------------------------
+# Endpoints
+# ------------------------------
+
+@app.post("/register")
+def register(user: RegisterIn):
+    u = register_user(user.name, user.email, user.password)
+    if not u:
+        raise HTTPException(status_code=400, detail="Email already exists")
+    return {"user_id": u["id"], "name": u["name"]}
+
+@app.post("/login")
+def login(user: LoginIn):
+    u = login_user(user.email, user.password)
+    if not u:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+    return {"user_id": u["id"], "name": u["name"]}
 
 @app.post("/notes/")
-def create_note(note: Note):
-    return create_note_logic(note.dict())
+def create_note(note: NoteIn):
+    share_link = str(uuid.uuid4()) if note.is_shared else None
+    note_data = {
+        "user_id": note.user_id,
+        "title": note.title,
+        "content": note.content,
+        "tags": note.tags,
+        "is_shared": note.is_shared,
+        "share_link": share_link
+    }
+    n = insert_note(note_data)
+    if not n:
+        raise HTTPException(status_code=500, detail="Failed to create note")
+    return {"note_id": n["id"], "share_link": share_link}
 
-@app.get("/notes/{user_id}")
-def get_notes(user_id: str):
-    return get_notes_logic(user_id)
+@app.get("/notes/")
+def fetch_notes(user_id: int):
+    notes = get_user_notes(user_id)
+    return notes
 
-@app.put("/notes/{note_id}")
-def update_note(note_id: int, note: Note):
-    return update_note_logic(note_id, note.dict())
+@app.get("/notes/share/{share_link}")
+def fetch_shared_note(share_link: str):
+    note = get_shared_note_by_link(share_link)
+    if not note:
+        raise HTTPException(status_code=404, detail="Shared note not found")
+    return note
 
-@app.delete("/notes/{note_id}")
-def delete_note(note_id: int):
-    return delete_note_logic(note_id)
+@app.put("/notes/share/{share_link}")
+def update_shared_note(share_link: str, data: SharedNoteUpdate):
+    note = get_shared_note_by_link(share_link)
+    if not note:
+        raise HTTPException(status_code=404, detail="Shared note not found")
+    updated = update_note(note["id"], data.dict())
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update note")
+    return {"message": "Shared note updated successfully"}

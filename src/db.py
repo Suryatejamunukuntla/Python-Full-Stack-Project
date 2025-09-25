@@ -1,78 +1,35 @@
+# src/db.py
+from supabase import create_client
 import os
 from dotenv import load_dotenv
-from supabase import create_client, Client
-from typing import List, Optional, Dict, Any
+from typing import Dict, Any, List, Optional
 
 load_dotenv()
-
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set in .env")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def create_note(user_id, title, content, tags=None, is_shared=False):
-    payload = {
-        "uid": user_id,
-        "title": title,
-        "note": content,
-    }
-    try:
-        res = supabase.table("notes").insert(payload).execute()
-        return res.data[0]  # the inserted row
-    except Exception as e:
-        raise RuntimeError(f"Supabase insert failed: {e}")
+def insert_note(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Insert a new note and return the inserted row"""
+    res = supabase.table("notes").insert(data).execute()
+    return res.data[0] if res.data else None
 
 
-
-def get_note(note_id: str):
-    try:
-        res = supabase.table("notes").select("*").eq("note_id", note_id).limit(1).execute()
-        return res.data[0] if res.data else None
-    except Exception as e:
-        raise RuntimeError(f"Supabase select failed: {e}")
+def get_user_notes(user_id: str) -> List[Dict[str, Any]]:
+    """Get all notes for a given user"""
+    res = supabase.table("notes").select("*").eq("user_id", user_id).execute()
+    return res.data or []
 
 
-def get_notes_for_user(uid: str, include_shared: bool = True):
-    try:
-        if include_shared:
-            res = supabase.table("notes").select("*").or_(
-                f"user_id.eq.{uid}"
-            ).order("updated_at", desc=True).execute()
-        else:
-            res = supabase.table("notes").select("*").eq("uid", uid).order("updated_at", desc=True).execute()
-        return res.data
-    except Exception as e:
-        raise RuntimeError(f"Supabase select failed: {e}")
+def get_shared_note_by_link(link: str) -> Optional[Dict[str, Any]]:
+    """Get a single shared note by its share_link"""
+    res = supabase.table("notes").select("*").eq("share_link", link).single().execute()
+    return res.data if res.data else None
 
 
-def update_note(note_id, title=None, content=None, tags=None, is_shared=None):
-    payload = {}
-    if title is not None: payload["title"] = title
-    if content is not None: payload["content"] = content
-    if tags is not None: payload["tags"] = tags
-    if is_shared is not None: payload["is_shared"] = is_shared
-
-    if not payload:
-        note = get_note(note_id)
-        if note is None:
-            raise RuntimeError("Note not found")
-        return note
-
-    try:
-        res = supabase.table("notes").update(payload).eq("id", note_id).execute()
-        return res.data[0]
-    except Exception as e:
-        raise RuntimeError(f"Supabase update failed: {e}")
-
-
-def delete_note(note_id):
-    try:
-        supabase.table("notes").delete().eq("id", note_id).execute()
-        return True
-    except Exception as e:
-        raise RuntimeError(f"Supabase delete failed: {e}")
-
+def update_note(note_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Update a note by ID and return the updated row"""
+    res = supabase.table("notes").update(data).eq("id", note_id).execute()
+    return res.data[0] if res.data else None

@@ -132,3 +132,13 @@ Ideas for extending the project:
 **Nofication**:Email or push notification for the due dates
 **File attachment**:Attach files   to tasks
 **Collboration**:Share tasks with your classmate
+
+
+
+
+<!-- git clone repo link or branch name
+git init
+git add .(filename)
+git commit -m "comment"
+git push -->
+
