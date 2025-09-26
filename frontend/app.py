@@ -1,17 +1,13 @@
-import streamlit as st
+import streamlit as st #streamlit run frontend/app.py
 import requests
 from dotenv import load_dotenv
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.logic import format_tags
-
 load_dotenv()
 API_URL = "http://localhost:8000"
 
-# ------------------------------
-# Session state initialisation
-# ------------------------------
 if "page" not in st.session_state:
     st.session_state["page"] = "login"
 if "user_id" not in st.session_state:
@@ -20,11 +16,13 @@ if "name" not in st.session_state:
     st.session_state["name"] = ""
 if "share_link" not in st.session_state:
     st.session_state["share_link"] = ""
-
+if "share_input_value" not in st.session_state:
+    st.session_state["share_input_value"] = ""  
+if "share_input_counter" not in st.session_state:
+    st.session_state["share_input_counter"] = 0 
 
 def switch_page(page_name: str):
     st.session_state["page"] = page_name
-
 
 # ------------------------------
 # Pages
@@ -35,12 +33,12 @@ def login_page():
     password = st.text_input("Password", type="password").strip()
 
     if st.button("Login"):
-        res = requests.post(f"{API_URL}/login",
-                            json={"email": email, "password": password})
         try:
+            res = requests.post(f"{API_URL}/login",
+                                json={"email": email, "password": password}, timeout=3)
             data = res.json()
-        except Exception:
-            st.error(res.text or "Login failed")
+        except requests.exceptions.RequestException:
+            st.error("Cannot connect to backend. Make sure FastAPI is running.")
             return
 
         if res.status_code == 200 and data:
@@ -55,7 +53,6 @@ def login_page():
     if st.button("Go to Register"):
         switch_page("register")
 
-
 def register_page():
     st.title("Register")
     name = st.text_input("Name").strip()
@@ -66,13 +63,12 @@ def register_page():
         if not name:
             st.error("Please enter your name")
             return
-
-        res = requests.post(f"{API_URL}/register",
-                            json={"name": name, "email": email, "password": password})
         try:
+            res = requests.post(f"{API_URL}/register",
+                                json={"name": name, "email": email, "password": password}, timeout=3)
             data = res.json()
-        except Exception:
-            st.error(res.text or "Registration failed")
+        except requests.exceptions.RequestException:
+            st.error("Cannot connect to backend. Make sure FastAPI is running.")
             return
 
         if res.status_code in [200, 201] and data:
@@ -85,23 +81,22 @@ def register_page():
     if st.button("Go to Login"):
         switch_page("login")
 
-
 def notes_page():
-    st.title("My Notes")
+    st.header("📝 My Notes")
     user_id = st.session_state.get("user_id")
     if not user_id:
-        st.warning("Please log in first.")
+        st.warning("⚠️ Please log in first.")
         switch_page("login")
         return
 
     # --- Create Note ---
-    st.subheader("Create a new note")
-    title = st.text_input("Title", key="new_title")
-    content = st.text_area("Content", key="new_content")
-    tags = st.text_input("Tags (comma separated)", key="new_tags")
-    is_shared = st.checkbox("Share this note", key="new_shared")
+    st.subheader("➕ Create a New Note")
+    title = st.text_input("📝 Title", key="new_title")
+    content = st.text_area("✏️ Content", key="new_content")
+    tags = st.text_input("🏷 Tags (comma separated)", key="new_tags")
+    is_shared = st.checkbox("🔗 Share this note", key="new_shared")
 
-    if st.button("Create Note"):
+    if st.button("Create Note", key="create_note_btn"):
         payload = {
             "user_id": user_id,
             "title": title,
@@ -109,72 +104,150 @@ def notes_page():
             "tags": format_tags(tags),
             "is_shared": is_shared
         }
-        res = requests.post(f"{API_URL}/notes/", json=payload)
+        try:
+            res = requests.post(f"{API_URL}/notes/", json=payload, timeout=3)
+        except requests.exceptions.RequestException:
+            st.error("❌ Cannot connect to backend. Make sure FastAPI is running.")
+            return
+
         if res.status_code == 200:
-            st.success("Note created successfully!")
+            st.success("✅ Note created successfully!")
+            st.rerun()
         else:
-            st.error("Error creating note")
+            st.error("❌ Error creating note")
 
     # --- Display User Notes ---
-    st.subheader("Your Notes")
-    res = requests.get(f"{API_URL}/notes/", params={"user_id": user_id})
+    st.subheader("📚 Your Notes")
+    try:
+        res = requests.get(f"{API_URL}/notes/", params={"user_id": user_id}, timeout=3)
+    except requests.exceptions.RequestException:
+        st.error("❌ Cannot connect to backend.")
+        return
+
     if res.status_code == 200:
         notes = res.json()
-        if notes:
-            for note in notes:
-                st.markdown(f"**{note['title']}**")
-                st.write(note['content'])
-                if note.get('is_shared'):
-                    st.write(f"Share link: {note.get('share_link')}")
-                st.write("---")
+        if not notes:
+            st.info("ℹ️ No notes found. Create one above.")
         else:
-            st.write("No notes found.")
+            for note in notes:
+                with st.expander(f"📝 {note['title']}"):
+                    st.write(note['content'])
+                    st.write("🏷 Tags:", ", ".join(note.get("tags", [])))
+                    if note.get('is_shared'):
+                        st.write(f"🔗 Share link: {note.get('share_link')}")
+
+                    # --- Edit toggle button ---
+                    edit_key = f"edit_enabled_{note['id']}"
+                    if edit_key not in st.session_state:
+                        st.session_state[edit_key] = False
+
+                    if st.button("✏️ Edit Note", key=f"edit_btn_{note['id']}"):
+                        st.session_state[edit_key] = True
+
+                    if st.session_state[edit_key]:
+                        edit_title = st.text_input("📝 Edit Title", value=note['title'], key=f"edit_title_{note['id']}")
+                        edit_content = st.text_area("✏️ Edit Content", value=note['content'], key=f"edit_content_{note['id']}")
+                        edit_tags = st.text_input(
+                            "🏷 Edit Tags (comma separated)",
+                            value=",".join(note.get("tags", [])),
+                            key=f"edit_tags_{note['id']}"
+                        )
+                        if st.button("💾 Save Changes", key=f"save_{note['id']}"):
+                            payload = {
+                                "title": edit_title,
+                                "content": edit_content,
+                                "tags": format_tags(edit_tags)
+                            }
+                            try:
+                                update_res = requests.put(f"{API_URL}/notes/{note['id']}", json=payload, timeout=3)
+                            except requests.exceptions.RequestException:
+                                st.error("❌ Cannot connect to backend.")
+                                return
+
+                            if update_res.status_code == 200:
+                                st.success("✅ Note updated successfully!")
+                                st.session_state[edit_key] = False
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Error updating note: {update_res.status_code}")
+
+                    # --- Delete Note ---
+                    if st.button("🗑 Delete Note", key=f"delete_{note['id']}"):
+                        try:
+                            del_res = requests.delete(
+                                f"{API_URL}/notes/{note['id']}",
+                                params={"user_id": user_id},
+                                timeout=3
+                            )
+                        except requests.exceptions.RequestException:
+                            st.error("❌ Cannot connect to backend.")
+                            return
+                        if del_res.status_code == 200:
+                            st.success("✅ Note deleted successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to delete note")
+                st.write("---")
     else:
-        st.error("Error fetching notes")
+        st.error("❌ Error fetching notes")
 
-    # --- Shared Note Collaboration Section ---
-    st.subheader("Access / Edit a Shared Note")
-    share_input = st.text_input("Enter share link", st.session_state.get("share_link", ""), key="share_input")
+    # --- Shared Note Section ---
+    st.subheader("🔗 Access / Edit a Shared Note")
+    share_input_key = f"share_input_widget_{st.session_state['share_input_counter']}"
+    share_input = st.text_input(
+        "🔗 Enter share link",
+        value=st.session_state.get("share_input_value", ""),
+        key=share_input_key
+    )
 
-    if st.button("Open Shared Note"):
+    if st.button("📂 Open Shared Note", key="open_shared_btn"):
         st.session_state["share_link"] = share_input.strip()
+        st.session_state["share_input_value"] = share_input.strip()
         if not share_input.strip():
-            st.error("Please enter a share link")
+            st.error("⚠️ Please enter a share link")
         else:
             st.rerun()
 
-    # If a share link is set, fetch the shared note via API
     if st.session_state.get("share_link"):
         share_link = st.session_state["share_link"]
-        res = requests.get(f"{API_URL}/notes/share/{share_link}")
+        try:
+            res = requests.get(f"{API_URL}/notes/share/{share_link}", timeout=3)
+        except requests.exceptions.RequestException:
+            st.error("❌ Cannot connect to backend.")
+            return
         if res.status_code == 200:
             shared_note = res.json()
-            st.markdown(f"### Editing Shared Note: **{shared_note['title']}**")
-            new_title = st.text_input("Edit Title", value=shared_note["title"], key="shared_title")
-            new_content = st.text_area("Edit Content", value=shared_note["content"], key="shared_content")
-            new_tags = st.text_input(
-                "Edit Tags (comma separated)",
+            st.text_input("📝 Edit Title", value=shared_note["title"], key="shared_title")
+            st.text_area("✏️ Edit Content", value=shared_note["content"], key="shared_content")
+            st.text_input(
+                "🏷 Edit Tags (comma separated)",
                 value=",".join(shared_note.get("tags", [])),
                 key="shared_tags"
             )
-
-            if st.button("Save Changes to Shared Note"):
+            if st.button("💾 Save Changes to Shared Note", key="save_shared_btn"):
                 payload = {
-                    "title": new_title,
-                    "content": new_content,
-                    "tags": format_tags(new_tags)
+                    "title": st.session_state["shared_title"],
+                    "content": st.session_state["shared_content"],
+                    "tags": format_tags(st.session_state["shared_tags"])
                 }
-                update_res = requests.put(f"{API_URL}/notes/share/{share_link}", json=payload)
+                try:
+                    update_res = requests.put(f"{API_URL}/notes/share/{share_link}", json=payload, timeout=3)
+                except requests.exceptions.RequestException:
+                    st.error("❌ Cannot connect to backend.")
+                    return
                 if update_res.status_code == 200:
-                    st.success("Shared note updated successfully!")
+                    st.success("✅ Shared note updated successfully!")
+                    st.session_state["share_link"] = ""
+                    st.session_state["share_input_value"] = ""
+                    st.session_state["share_input_counter"] += 1
+                    st.rerun()
                 else:
-                    st.error("Error updating shared note")
-        else:
-            st.error("Invalid or inaccessible share link.")
+                    st.error("❌ Error updating shared note")
 
-    if st.button("Logout"):
+    if st.button("🚪 Logout", key="logout_btn"):
         st.session_state.clear()
         switch_page("login")
+
 
 
 

@@ -33,3 +33,12 @@ def update_note(note_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Update a note by ID and return the updated row"""
     res = supabase.table("notes").update(data).eq("id", note_id).execute()
     return res.data[0] if res.data else None
+def delete_note(note_id: str, user_id: str) -> bool:
+
+    res = supabase.table("notes").select("id,user_id").eq("id", note_id).eq("user_id", user_id).execute()
+    if not res.data:
+        return False
+
+    supabase.table("notes").delete().eq("id", note_id).eq("user_id", user_id).execute()
+    return True
+

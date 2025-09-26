@@ -1,7 +1,8 @@
 # main.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from src.db import insert_note, get_user_notes, get_shared_note_by_link, update_note
+from src.db import insert_note, get_user_notes, get_shared_note_by_link, update_note, delete_note
+#uvicorn api.main:app --reload 
 import uuid
 
 app = FastAPI()
@@ -26,6 +27,11 @@ class NoteIn(BaseModel):
     is_shared: bool = False
 
 class SharedNoteUpdate(BaseModel):
+    title: str
+    content: str
+    tags: list
+
+class UserNoteUpdate(BaseModel):  # <-- For editing user-created notes
     title: str
     content: str
     tags: list
@@ -60,7 +66,6 @@ def login_user(email: str, password: str):
 # ------------------------------
 # Endpoints
 # ------------------------------
-
 @app.post("/register")
 def register(user: RegisterIn):
     u = register_user(user.name, user.email, user.password)
@@ -96,6 +101,13 @@ def fetch_notes(user_id: int):
     notes = get_user_notes(user_id)
     return notes
 
+@app.put("/notes/{note_id}")  # <-- New endpoint for editing user notes
+def update_user_note(note_id: str, data: UserNoteUpdate):
+    updated = update_note(note_id, data.dict())
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update note")
+    return {"message": "Note updated successfully"}
+
 @app.get("/notes/share/{share_link}")
 def fetch_shared_note(share_link: str):
     note = get_shared_note_by_link(share_link)
@@ -112,3 +124,10 @@ def update_shared_note(share_link: str, data: SharedNoteUpdate):
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update note")
     return {"message": "Shared note updated successfully"}
+
+@app.delete("/notes/{note_id}")
+def remove_note(note_id: str, user_id: str):
+    success = delete_note(note_id, user_id)   # <-- implement in src/db.py
+    if not success:
+        raise HTTPException(status_code=404, detail="Note not found or not authorized")
+    return {"message": "Note deleted successfully"}
