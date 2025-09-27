@@ -82,8 +82,24 @@ pip install -r requirements.txt
     -run  this sql command:
 
 ``` 
--- Notes table
+-- Users table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL
+);
 
+-- Notes table
+CREATE TABLE notes (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    content TEXT,
+    tags TEXT[],  -- PostgreSQL array type
+    is_shared BOOLEAN DEFAULT FALSE,
+    share_link VARCHAR(255)
+);
 
 ```
 ## 4.Configure environment variables
